@@ -253,6 +253,12 @@ app.post('/shipping-rates', async (req, res) => {
       });
     }
 
+    console.log('First raw Swotzy rate:');
+
+    console.dir(swotzyRates[0], {
+      depth: null,
+    });
+
     const shopifyRates = swotzyRates
       .map((rate, index) => {
         return mapSwotzyRateToShopify(
@@ -444,6 +450,48 @@ function extractSwotzyRates(data) {
   return [];
 }
 
+function getCarrierName(rate = {}) {
+  const possibleNames = [
+    typeof rate.carrier === 'string'
+      ? rate.carrier
+      : rate.carrier?.name,
+
+    typeof rate.courier === 'string'
+      ? rate.courier
+      : rate.courier?.name,
+
+    typeof rate.provider === 'string'
+      ? rate.provider
+      : rate.provider?.name,
+
+    rate.carrier_name,
+    rate.carrierName,
+
+    rate.courier_name,
+    rate.courierName,
+
+    rate.provider_name,
+    rate.providerName,
+
+    rate.company_name,
+    rate.companyName,
+
+    rate.delivery_company,
+    rate.deliveryCompany,
+
+    rate.service?.carrier?.name,
+    rate.service?.courier?.name,
+  ];
+
+  return (
+    possibleNames.find(
+      (value) =>
+        typeof value === 'string' &&
+        value.trim()
+    )?.trim() || 'Courier'
+  );
+}
+
 /**
  * Преобразует один тариф Swotzy
  * в формат Shopify CarrierService.
@@ -453,37 +501,41 @@ function mapSwotzyRateToShopify(
   index,
   fallbackCurrency = 'EUR'
 ) {
-  const carrierName =
-    rate.carrier?.name ||
-    rate.carrier_name ||
-    rate.provider_name ||
-    rate.provider ||
-    'Courier';
+  const carrierName = getCarrierName(rate);
 
   const serviceName =
     rate.service?.name ||
     rate.service_name ||
+    rate.serviceName ||
     rate.name ||
     rate.title ||
-    'Delivery';
-
-  const carrierCode =
-    rate.carrier?.code ||
-    rate.carrier?.id ||
-    rate.carrier_id ||
-    carrierName;
+    `Delivery ${index + 1}`;
 
   const serviceId =
-    rate.service?.code ||
     rate.service?.id ||
+    rate.service?.code ||
     rate.service_id ||
+    rate.serviceId ||
     rate.id ||
     index + 1;
+
+  const carrierId =
+    rate.carrier?.id ||
+    rate.carrier?.code ||
+    rate.carrier_id ||
+    rate.carrierId ||
+    rate.courier?.id ||
+    rate.courier?.code ||
+    carrierName;
 
   const price = extractPrice(rate);
 
   if (!Number.isFinite(price)) {
-    console.error('Invalid Swotzy rate price:', rate);
+    console.error(
+      'Invalid Swotzy rate price:',
+      rate
+    );
+
     return null;
   }
 
@@ -491,14 +543,14 @@ function mapSwotzyRateToShopify(
     service_name: `${carrierName} — ${serviceName}`,
 
     service_code: createServiceCode(
-      `${carrierCode}_${serviceId}`,
+      `${carrierId}_${serviceId}`,
       index
     ),
 
     description:
       rate.description ||
       rate.delivery_time ||
-      rate.estimated_delivery ||
+      rate.deliveryTime ||
       'Delivery through Swotzy',
 
     total_price: String(
@@ -507,8 +559,9 @@ function mapSwotzyRateToShopify(
 
     currency: String(
       rate.currency ||
-      rate.price?.currency ||
-      fallbackCurrency
+        rate.price?.currency ||
+        fallbackCurrency ||
+        'EUR'
     ).toUpperCase(),
   };
 }
