@@ -1,0 +1,14 @@
+{
+  "name": "swotzy-to-shopify",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "express": "^4.0.0"
+  }
+}
