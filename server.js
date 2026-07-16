@@ -253,12 +253,6 @@ app.post('/shipping-rates', async (req, res) => {
       });
     }
 
-    console.log('First raw Swotzy rate:');
-
-    console.dir(swotzyRates[0], {
-      depth: null,
-    });
-
     const shopifyRates = swotzyRates
       .map((rate, index) => {
         return mapSwotzyRateToShopify(
@@ -492,6 +486,147 @@ function getCarrierName(rate = {}) {
   );
 }
 
+function getRateDescription(rate = {}) {
+  const possibleDescriptions = [
+    rate.description,
+
+    rate.service_description,
+    rate.serviceDescription,
+    rate.service?.description,
+
+    rate.delivery_time,
+    rate.deliveryTime,
+    rate.service?.delivery_time,
+    rate.service?.deliveryTime,
+
+    rate.estimated_delivery,
+    rate.estimatedDelivery,
+    rate.estimated_delivery_time,
+    rate.estimatedDeliveryTime,
+
+    rate.transit_time,
+    rate.transitTime,
+    rate.service?.transit_time,
+    rate.service?.transitTime,
+
+    rate.eta,
+  ];
+
+  const description = possibleDescriptions.find(
+    value =>
+      typeof value === 'string' &&
+      value.trim()
+  );
+
+  if (description) {
+    return description.trim();
+  }
+
+  const deliveryDays =
+    rate.delivery_days ??
+    rate.deliveryDays ??
+    rate.transit_days ??
+    rate.transitDays ??
+    rate.service?.delivery_days ??
+    rate.service?.deliveryDays;
+
+  if (Number.isFinite(Number(deliveryDays))) {
+    const days = Number(deliveryDays);
+
+    return `Estimated delivery: ${days} business ${
+      days === 1 ? 'day' : 'days'
+    }`;
+  }
+
+  const minDays = Number(
+    rate.min_delivery_days ??
+    rate.minDeliveryDays ??
+    rate.delivery_days_min ??
+    rate.transit_days_min ??
+    rate.service?.min_delivery_days
+  );
+
+  const maxDays = Number(
+    rate.max_delivery_days ??
+    rate.maxDeliveryDays ??
+    rate.delivery_days_max ??
+    rate.transit_days_max ??
+    rate.service?.max_delivery_days
+  );
+
+  if (
+    Number.isFinite(minDays) &&
+    Number.isFinite(maxDays)
+  ) {
+    if (minDays === maxDays) {
+      return `Estimated delivery: ${minDays} business ${
+        minDays === 1 ? 'day' : 'days'
+      }`;
+    }
+
+    return `Estimated delivery: ${minDays}–${maxDays} business days`;
+  }
+
+  return 'Delivery through Swotzy';
+}
+
+function toShopifyDeliveryDate(value) {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
+    return null;
+  }
+
+  /*
+   * Swotzy возвращает только дату.
+   * Добавляем время и UTC-смещение
+   * в формате, который принимает Shopify.
+   */
+  return `${value} 12:00:00 +0000`;
+}
+
+function formatDeliveryDate(value) {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
+    return null;
+  }
+
+  const [year, month, day] = value.split('-');
+
+  return `${day}.${month}.${year}`;
+}
+
+function getDeliveryEstimateDescription(rate = {}) {
+  const fromDate = formatDeliveryDate(
+    rate.delivery_estimate?.from_date
+  );
+
+  const toDate = formatDeliveryDate(
+    rate.delivery_estimate?.to_date
+  );
+
+  if (fromDate && toDate) {
+    if (fromDate === toDate) {
+      return `Estimated delivery: ${fromDate}`;
+    }
+
+    return `Estimated delivery: ${fromDate}–${toDate}`;
+  }
+
+  if (fromDate) {
+    return `Estimated delivery from ${fromDate}`;
+  }
+
+  if (toDate) {
+    return `Estimated delivery by ${toDate}`;
+  }
+
+  return '';
+}
+
 /**
  * Преобразует один тариф Swotzy
  * в формат Shopify CarrierService.
@@ -539,7 +674,17 @@ function mapSwotzyRateToShopify(
     return null;
   }
 
-  return {
+  const minDeliveryDate =
+    toShopifyDeliveryDate(
+      rate.delivery_estimate?.from_date
+    );
+
+  const maxDeliveryDate =
+    toShopifyDeliveryDate(
+      rate.delivery_estimate?.to_date
+    );
+
+  const shopifyRate = {
     service_name: `${carrierName} — ${serviceName}`,
 
     service_code: createServiceCode(
@@ -547,11 +692,7 @@ function mapSwotzyRateToShopify(
       index
     ),
 
-    description:
-      rate.description ||
-      rate.delivery_time ||
-      rate.deliveryTime ||
-      'Delivery through Swotzy',
+    description: getDeliveryEstimateDescription(rate),
 
     total_price: String(
       Math.round(price * 100)
@@ -564,6 +705,18 @@ function mapSwotzyRateToShopify(
         'EUR'
     ).toUpperCase(),
   };
+
+  if (minDeliveryDate) {
+    shopifyRate.min_delivery_date =
+      minDeliveryDate;
+  }
+
+  if (maxDeliveryDate) {
+    shopifyRate.max_delivery_date =
+      maxDeliveryDate;
+  }
+
+  return shopifyRate;
 }
 
 /**
