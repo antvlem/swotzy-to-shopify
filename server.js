@@ -254,6 +254,19 @@ app.post('/shipping-rates', async (req, res) => {
     }
 
     const shopifyRates = swotzyRates
+      .filter((rate) => {
+        const blocked =
+          isBlockedSwotzyRate(rate);
+
+        if (blocked) {
+          console.log(
+            'Blocked Swotzy carrier:',
+            getNormalizedCarrierName(rate)
+          );
+        }
+
+        return !blocked;
+      })
       .map((rate, index) => {
         return mapSwotzyRateToShopify(
           rate,
@@ -442,6 +455,30 @@ function extractSwotzyRates(data) {
   }
 
   return [];
+}
+
+const BLOCKED_SWOTZY_CARRIERS = new Set([
+  'QWQER',
+]);
+
+function getNormalizedCarrierName(rate = {}) {
+  const carrier =
+    typeof rate.carrier === 'string'
+      ? rate.carrier
+      : rate.carrier?.name;
+
+  return String(carrier || '')
+    .trim()
+    .toUpperCase();
+}
+
+function isBlockedSwotzyRate(rate = {}) {
+  const carrier =
+    getNormalizedCarrierName(rate);
+
+  return BLOCKED_SWOTZY_CARRIERS.has(
+    carrier
+  );
 }
 
 function getCarrierName(rate = {}) {
