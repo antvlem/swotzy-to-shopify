@@ -253,19 +253,27 @@ app.post('/shipping-rates', async (req, res) => {
       });
     }
 
+    const destinationCountry =
+      shopifyRate.destination.country ||
+      shopifyRate.destination.country_code ||
+      '';
+
     const shopifyRates = swotzyRates
       .filter((rate) => {
-        const blocked =
-          isBlockedSwotzyRate(rate);
+        const allowed = shouldReturnSwotzyRate(
+          rate,
+          destinationCountry
+        );
 
-        if (blocked) {
-          console.log(
-            'Blocked Swotzy carrier:',
-            getNormalizedCarrierName(rate)
-          );
+        if (!allowed) {
+          console.log('Swotzy rate filtered:', {
+            country: destinationCountry,
+            carrier: getSwotzyCarrier(rate),
+            service: getSwotzyService(rate),
+          });
         }
 
-        return !blocked;
+        return allowed;
       })
       .map((rate, index) => {
         return mapSwotzyRateToShopify(
@@ -457,9 +465,127 @@ function extractSwotzyRates(data) {
   return [];
 }
 
+const EU_COUNTRY_CODES = new Set([
+  'AT', // Austria
+  'BE', // Belgium
+  'BG', // Bulgaria
+  'HR', // Croatia
+  'CY', // Cyprus
+  'CZ', // Czechia
+  'DK', // Denmark
+  'EE', // Estonia
+  'FI', // Finland
+  'FR', // France
+  'DE', // Germany
+  'GR', // Greece
+  'HU', // Hungary
+  'IE', // Ireland
+  'IT', // Italy
+  'LV', // Latvia
+  'LT', // Lithuania
+  'LU', // Luxembourg
+  'MT', // Malta
+  'NL', // Netherlands
+  'PL', // Poland
+  'PT', // Portugal
+  'RO', // Romania
+  'SK', // Slovakia
+  'SI', // Slovenia
+  'ES', // Spain
+  'SE', // Sweden
+]);
+
 const BLOCKED_SWOTZY_CARRIERS = new Set([
   'QWQER',
 ]);
+
+function normalizeRateValue(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function getSwotzyCarrier(rate = {}) {
+  return normalizeRateValue(
+    typeof rate.carrier === 'string'
+      ? rate.carrier
+      : rate.carrier?.name
+  );
+}
+
+function getSwotzyService(rate = {}) {
+  const service =
+    typeof rate.service === 'string'
+      ? rate.service
+      : rate.service?.name;
+
+  return normalizeRateValue(
+    [
+      service,
+      rate.name,
+      rate.service_name,
+      rate.serviceName,
+    ]
+      .filter(Boolean)
+      .join(' ')
+  );
+}
+
+function shouldReturnSwotzyRate(
+  rate = {},
+  destinationCountry = ''
+) {
+  const countryCode = normalizeRateValue(
+    destinationCountry
+  );
+
+  const carrier = getSwotzyCarrier(rate);
+  const service = getSwotzyService(rate);
+
+  /*
+   * Перевозчики, запрещённые везде.
+   */
+  if (BLOCKED_SWOTZY_CARRIERS.has(carrier)) {
+    return false;
+  }
+
+  /*
+   * DHL Express разрешён для любого региона.
+   */
+  if (
+    carrier === 'DHL EXPRESS' ||
+    carrier.includes('DHL EXPRESS')
+  ) {
+    return true;
+  }
+
+  /*
+   * Региональные правила Omniva.
+   */
+  if (carrier === 'OMNIVA') {
+    const isEuropeanUnion =
+      EU_COUNTRY_CODES.has(countryCode);
+
+    const isPremium =
+      service.includes('PREMIUM');
+
+    const isStandard =
+      service.includes('STANDARD');
+
+    if (isEuropeanUnion) {
+      return isStandard || isPremium;
+    }
+
+    return isPremium;
+  }
+
+  /*
+   * Остальные перевозчики пока не ограничиваем.
+   */
+  return true;
+}
 
 function getNormalizedCarrierName(rate = {}) {
   const carrier =
