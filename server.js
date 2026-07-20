@@ -537,36 +537,23 @@ function shouldReturnSwotzyRate(
   rate = {},
   destinationCountry = ''
 ) {
-  const countryCode = normalizeRateValue(
-    destinationCountry
-  );
+  const countryCode = String(destinationCountry)
+    .trim()
+    .toUpperCase();
 
   const carrier = getSwotzyCarrier(rate);
   const service = getSwotzyService(rate);
 
-  /*
-   * Перевозчики, запрещённые везде.
-   */
   if (BLOCKED_SWOTZY_CARRIERS.has(carrier)) {
     return false;
   }
 
-  /*
-   * DHL Express разрешён для любого региона.
-   */
-  if (
-    carrier === 'DHL EXPRESS' ||
-    carrier.includes('DHL EXPRESS')
-  ) {
+  if (carrier.includes('DHL EXPRESS')) {
     return true;
   }
 
-  /*
-   * Региональные правила Omniva.
-   */
-  if (carrier === 'OMNIVA') {
-    const isEuropeanUnion =
-      EU_COUNTRY_CODES.has(countryCode);
+  if (carrier.includes('OMNIVA')) {
+    const isEU = EU_COUNTRY_CODES.has(countryCode);
 
     const isPremium =
       service.includes('PREMIUM');
@@ -574,16 +561,20 @@ function shouldReturnSwotzyRate(
     const isStandard =
       service.includes('STANDARD');
 
-    if (isEuropeanUnion) {
-      return isStandard || isPremium;
+    if (isEU) {
+      /*
+       * В ЕС оставляем все тарифы Omniva,
+       * кроме тех, которые позже явно запретим.
+       */
+      return true;
     }
 
+    /*
+     * За пределами ЕС — только Premium.
+     */
     return isPremium;
   }
 
-  /*
-   * Остальные перевозчики пока не ограничиваем.
-   */
   return true;
 }
 
